@@ -161,6 +161,13 @@ function CopyBootFiles($iso, $outputfolder) {
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
     $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
     $destinationfolder = $outputfolder + $sourcefolder
+    $wimBootLatest = 'http://git.ipxe.org/releases/wimboot/wimboot-latest.zip'
+    Invoke-WebRequest -Uri $wimBootLatest -OutFile "$tempfolder\wimboot-latest.zip"
+    [System.IO.Compression.ZipFile]::ExtractToDirectory("$tempfolder\wimboot-latest.zip", "$tempfolder\wimboot-latest")
+
+    Get-ChildItem -Path "$tempfolder\wimboot-latest\*\wimboot" | Copy-Item -Destination "$destinationfolder\wimboot"
+
+    Remove-Item "$tempfolder\wimboot-latest*" -Recurse -Force
 
     $boot_files = @(
         'boot\boot.sdi',
@@ -357,7 +364,7 @@ foreach($iso in $list_isos){
     Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
     ExtractISO $iso $tempfolder $overwrite
 
-    PrepareWinPEWIM $iso $outputfolder
+    #PrepareWinPEWIM $iso $outputfolder
     #PrepareInstallWIM $iso $outputfolder
 
     Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
