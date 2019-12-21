@@ -122,6 +122,22 @@ function AddDriversToWIM($wimFile, $driverFolder) {
     return $false;
 }
 
+function ExtractXMLFromWIM($wimfile) {
+    $rawWIM = [System.IO.File]::OpenRead($wimfile)
+
+    $position = $rawWIM.seek(0x50,0)
+    $bytes = New-Object -TypeName Byte[] -ArgumentList 8
+    $bytesRead = $rawWIM.read($bytes,0,$bytes.Length)
+    $xmlSize = $rawWIM.Length - [System.BitConverter]::toInt64($bytes, 0) - 2
+    $position = $rawWIM.seek(-$xmlSize,'END')
+    $bytes = New-Object -TypeName Byte[] -ArgumentList $xmlSize
+    $bytesRead = $rawWIM.read($bytes,0,$bytes.Length)
+
+    $rawWIM.Close()
+    [xml]$result = [System.Text.Encoding]::Unicode.getString($bytes, 0, $bytes.Length)
+    return $result
+}
+
 function CopyBootFiles($iso, $outputfolder) {
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
     $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
@@ -148,40 +164,48 @@ function PrepareInstallWIM($iso, $outputfolder) {
     $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
     $installwim = $tempfolder + $sourcefolder + '\sources\install.wim'
 
-    Write-Host "`tExtracting install.wim " -ForegroundColor White -NoNewLine
-    if (ExtractWIM $installwim 1) {
-        Write-Host "OK" -ForegroundColor Green
-        Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
-        if (AddDriversToWIM $installwim ".\drivers") {
+    $metaData = ExtractXMLFromWIM $installwim
+    $amountOfImages = $metaData.WIM.IMAGE.Length
+    Write-Host "`tFound " $amountOfImages "images!"
+
+    For ($imageIndex=1; $i -le $amountOfImages; $imageIndex++) {
+        $imageName = $metaData.WIM.IMAGE[$imageIndex].NAME
+
+        Write-Host "`t`tExtracting [$imageIndex/$amountOfImages] $imageName " -ForegroundColor White -NoNewLine
+        if (ExtractWIM $installwim $imageIndex) {
             Write-Host "OK" -ForegroundColor Green
+            Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
+            if (AddDriversToWIM $installwim ".\drivers") {
+                Write-Host "OK" -ForegroundColor Green
+            } else {
+                Write-Host "Failed" -ForegroundColor Red
+            }
+
+            Write-Host -ForegroundColor White "`t`tOptimizing image... " -NoNewline
+            if (OptimizeWIM $installwim) {
+                Write-Host "OK" -ForegroundColor Green
+            } else {
+                Write-Host "Failed" -ForegroundColor Red
+            }
+
+            Write-Host -ForegroundColor White "`t`tCommiting changes... " -NoNewline
+            if (FinishWIM $installwim) {
+                Write-Host "OK" -ForegroundColor Green
+            } else {
+                Write-Host "Failed" -ForegroundColor Red
+            }
+
+            New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
+
+            Write-Host "`t`tExporting '$installwim'..." -NoNewline -ForegroundColor White
+            if (ExportWIMIndex $installwim ($destinationfolder + "\" + '$imageName.wim') $imageIndex) {
+                Write-Host "OK" -ForegroundColor Green
+            } else {
+                Write-Host "Failed" -ForegroundColor Red
+            }
         } else {
             Write-Host "Failed" -ForegroundColor Red
         }
-
-        Write-Host -ForegroundColor White "`t`tOptimizing image... " -NoNewline
-        if (OptimizeWIM $installwim) {
-            Write-Host "OK" -ForegroundColor Green
-        } else {
-            Write-Host "Failed" -ForegroundColor Red
-        }
-
-        Write-Host -ForegroundColor White "`t`tCommiting changes... " -NoNewline
-        if (FinishWIM $installwim) {
-            Write-Host "OK" -ForegroundColor Green
-        } else {
-            Write-Host "Failed" -ForegroundColor Red
-        }
-
-        New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
-
-        Write-Host "`t`tExporting '$installwim'..." -NoNewline -ForegroundColor White
-        if (ExportWIMIndex $installwim ($destinationfolder + "\" + 'install.wim') 1) {
-            Write-Host "OK" -ForegroundColor Green
-        } else {
-            Write-Host "Failed" -ForegroundColor Red
-        }
-    } else {
-        Write-Host "Failed" -ForegroundColor Red
     }
 }
 
@@ -306,8 +330,9 @@ $list_isos = Get-ChildItem -Path "$sourcefolder\*\*\*.iso"
 foreach($iso in $list_isos){
     Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
     ExtractISO $iso $tempfolder $overwrite
-    PrepareWinPEWIM $iso $outputfolder
-    #PrepareInstallWIM $iso $outputfolder
+
+    #PrepareWinPEWIM $iso $outputfolder
+    PrepareInstallWIM $iso $outputfolder
 
     Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
     CopyBootFiles $iso $outputfolder
