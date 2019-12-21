@@ -1,2 +1,7 @@
 winpe/drivers/
 winpe/packages/
+.tmp/
+finalized/
+sources/
+drivers/
+winpe/images

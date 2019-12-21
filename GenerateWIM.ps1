@@ -3,7 +3,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 function Copy-If-Newer($source_file, $destination_file) {
     New-Item -Force -ItemType directory -Path ([System.IO.FileInfo]$destination_file).Directory.FullName | Out-Null
-    if ( !(Test-Path $destination_file -PathType Leaf) -or 
+    if ( !(Test-Path $destination_file -PathType Leaf) -or
             (( ([System.IO.FileInfo]$source_file).LastWriteTime -gt ([System.IO.FileInfo]$destination_file).LastWriteTime ) -and
             ( ([System.IO.FileInfo]$source_file).Length -ne ([System.IO.FileInfo]$destination_file).Length )
             )
@@ -15,7 +15,6 @@ function Copy-If-Newer($source_file, $destination_file) {
 function ExtractISO($iso, $outputfolder, $overwrite) {
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
     $outputfolder += $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
-    # $sourcefolder = $outputfolder
     $dedicated_winpe = "$pwd/winpe/images/$architecture/boot.wim"
     $mount_params = @{ImagePath = $iso; PassThru = $true; ErrorAction = "Ignore"}
     $mount = Mount-DiskImage @mount_params
@@ -26,9 +25,13 @@ function ExtractISO($iso, $outputfolder, $overwrite) {
         $volume = Get-DiskImage -ImagePath $mount.ImagePath | Get-Volume
         $source = $volume.DriveLetter + ":\"
         New-Item -Force -ItemType directory -Path $outputfolder | Out-Null
-        
+
         $important_files = @(
-            'sources\install.wim'
+            'sources\install.wim',
+            'boot\boot.sdi',
+            'boot\bcd',
+            'bootmgr',
+            'bootmgr.efi'
         )
 
         if (Test-Path $dedicated_winpe -PathType Leaf) {
@@ -37,11 +40,11 @@ function ExtractISO($iso, $outputfolder, $overwrite) {
         } else {
             $important_files += 'sources\boot.wim'
         }
-             
+
         foreach ($important_file in $important_files) {
             $source_file = $source + '\' + $important_file
             $destination_file = $outputfolder + '\' + $important_file
-            
+
             Copy-If-Newer $source_file $destination_file
         }
 
@@ -57,11 +60,12 @@ function PrepareWIM($wimFile) {
     Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Discard > $null
 }
 
-function ExportWIMIndex($wimFile, $exportedWimFile, $index) {    
-    #dism /Delete-Image /ImageFile:”$wimFile” /Index:$index | Out-Null
+function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
+    if (Test-Path "$exportedWimFile" -PathType Leaf) {
+        Remove-Item "$exportedWimFile" -Force | Out-Null
+    }
 
-    Remove-Item ”$exportedWimFile” -Force | Out-Null
-    Dism /Export-Image /SourceImageFile:”$wimFile” /SourceIndex:$index /DestinationImageFile:”$exportedWimFile” /Compress:max /Bootable > $null
+    Dism /Export-Image /SourceImageFile:"$wimFile" /SourceIndex:$index /DestinationImageFile:"$exportedWimFile" /Compress:max /Bootable > $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -71,77 +75,188 @@ function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
 
 function ExtractWIM($wimFile, $index) {
     PrepareWIM $wimFile
-    
-    Remove-Item "${wimFile}_mount/" -Recurse -Force | Out-Null
-    New-Item -ItemType directory -Path "${wimFile}_mount/" | Out-Null
+
+    if (Test-Path "${wimFile}_mount/" -PathType Leaf) {
+        Remove-Item "${wimFile}_mount/" -Recurse -Force | Out-Null
+    }
+
+    New-Item -ItemType directory -Path "${wimFile}_mount/" -Force | Out-Null
 
     Dism /Mount-Image /ImageFile:"$wimFile" /index:1 /MountDir:"${wimFile}_mount" > $null
+
+    if ($? -ne 0) { return $true; }
+    return $false;
+}
+
+function OptimizeWIM($wimFile) {
+    DISM /Cleanup-Image /Image="${wimFile}_mount" /StartComponentCleanup /ResetBase  > $null
+    if ($? -ne 0) {
+        return $true
+    } else {
+        return $false
+    }
+}
+
+function SetWinPETargetPath($wimFile, $targetPath) {
+    Dism /Image:"${wimFile}_mount" /Set-TargetPath:"$targetPath" > $null
+    if ($? -ne 0) {
+        return $true
+    } else {
+        return $false
+    }
 }
 
 function FinishWIM($wimFile) {
-    Write-Host -ForegroundColor White "`tSetting TargetPath to X: ..." -NoNewline
-    Dism /Image:"${wimFile}_mount" /Set-TargetPath:X:\ > $null
-    if ($? -ne 0) { Write-Host -ForegroundColor Green "OK" } else { Write-Host -ForegroundColor Red "FAIL" }
-    
-    Write-Host -ForegroundColor White "`tOptimizing image ..." -NoNewline
-    DISM /Cleanup-Image /Image="${wimFile}_mount" /StartComponentCleanup /ResetBase  > $null
-    if ($? -ne 0) { Write-Host -ForegroundColor Green "OK" } else { Write-Host -ForegroundColor Red "FAIL" }
-    
-    Write-Host -ForegroundColor White "`tCommiting changes ..." -NoNewline
     Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Commit > $null
-    if ($? -ne 0) { Write-Host -ForegroundColor Green "OK" } else { Write-Host -ForegroundColor Red "FAIL" }
+    if ($? -ne 0) {
+        return $true
+    } else {
+        return $false
+    }
 }
 
 function AddDriversToWIM($wimFile, $driverFolder) {
-    Dism /Image:"${wimFile}_mount" /Add-Driver /Driver:$driverFolder /recurse /ForceUnsigned > $null
+    Dism /Image:"${wimFile}_mount" /Add-Driver /Driver:$driverFolder /recurse /ForceUnsigned
+
+    if ($? -ne 0) { return $true; }
+    return $false;
 }
 
-function PrepareWinPE($iso, $outputfolder) {
-    $sourcefolder = ([System.IO.FileInfo]$iso).Directory.Name
+function CopyBootFiles($iso, $outputfolder) {
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
-    $destinationfolder = $outputfolder + $sourcefolder + '/sources/'
-    $bootwim = $tempfolder + $sourcefolder + '/sources/boot.wim'
+    $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
+    $destinationfolder = $outputfolder + $sourcefolder
 
-    Write-Host "`tExtracting '$bootwim'" -ForegroundColor White
-    ExtractWIM $bootwim 1
-    # Do magic here!
+    $boot_files = @(
+        'boot\boot.sdi',
+        'boot\bcd',
+        'bootmgr',
+        'bootmgr.efi'
+    )
 
-    $Acl = Get-Acl ($tempfolder + $sourcefolder + '/sources/boot.wim_mount/windows/system32/winpe.jpg')
-    $Ar = New-Object  system.security.accesscontrol.filesystemaccessrule("Administrators","FullControl","Allow")
-    $Acl.SetAccessRule($Ar)
-    Set-Acl ($tempfolder + $sourcefolder + '/sources/boot.wim_mount/windows/system32/winpe.jpg') $Acl
-    Copy-Item ".\theme\winPE\winpe.jpg" -Destination ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg') -Force | Out-Null
+    foreach ($boot_file in $boot_files) {
+        $source_file = ".\.tmp\" + $sourcefolder + '\' + $boot_file
+        $destination_file = $destinationfolder + '\' + $boot_file
 
-    Copy-Item ".\winpe\overlay\*" -Destination ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\') -Recurse -Force | Out-Null
+        Copy-If-Newer $source_file $destination_file
+    }
+}
 
-    $permanent_packages = "*Microsoft-Windows-WinPE*"
-    $all_packages = Get-WindowsPackage -Path "${bootwim}_mount"
+function PrepareInstallWIM($iso, $outputfolder) {
+    $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
+    $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
+    $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
+    $installwim = $tempfolder + $sourcefolder + '\sources\install.wim'
 
-    foreach ($package in $all_packages) {
-        $package_name = $package.PackageName
+    Write-Host "`tExtracting install.wim " -ForegroundColor White -NoNewLine
+    if (ExtractWIM $installwim 1) {
+        Write-Host "OK" -ForegroundColor Green
+        Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
+        if (AddDriversToWIM $installwim ".\drivers") {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
 
-        if (!($package_name -like $permanent_packages)) {
-            $short_package = ($package_name -split '~')[0]
-            Write-Host "`tRemoving $short_package ... " -NoNewline -ForegroundColor White
-	        DISM /Image:"${bootwim}_mount" /Remove-Package /PackageName:$package_name > $null
-            if ($? -ne 0) {
-                Write-Host "OK" -ForegroundColor Green
-            } else {
-                Write-Host "FAIL" -ForegroundColor Red
+        Write-Host -ForegroundColor White "`t`tOptimizing image... " -NoNewline
+        if (OptimizeWIM $installwim) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
+
+        Write-Host -ForegroundColor White "`t`tCommiting changes... " -NoNewline
+        if (FinishWIM $installwim) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
+
+        New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
+
+        Write-Host "`t`tExporting '$installwim'..." -NoNewline -ForegroundColor White
+        if (ExportWIMIndex $installwim ($destinationfolder + "\" + 'install.wim') 1) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Failed" -ForegroundColor Red
+    }
+}
+
+function PrepareWinPEWIM($iso, $outputfolder) {
+    $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
+    $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
+    $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
+    $bootwim = $tempfolder + $sourcefolder + '\sources\boot.wim'
+
+    Write-Host "`tExtracting boot.wim " -ForegroundColor White -NoNewline
+    if (ExtractWIM $bootwim 1) {
+        Write-Host "OK" -ForegroundColor Green
+        # Do magic here!
+        $Acl = Get-Acl ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg')
+        $Ar = New-Object  system.security.accesscontrol.filesystemaccessrule("Administrators","FullControl","Allow")
+        $Acl.SetAccessRule($Ar)
+        Set-Acl ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg') $Acl
+        Copy-Item ".\theme\winPE\winpe.jpg" -Destination ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg') -Force | Out-Null
+
+        Copy-Item ".\winpe\overlay\*" -Destination ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\') -Recurse -Force | Out-Null
+
+        $permanent_packages = "*Microsoft-Windows-WinPE*"
+        $all_packages = Get-WindowsPackage -Path "${bootwim}_mount"
+
+        foreach ($package in $all_packages) {
+            $package_name = $package.PackageName
+
+            if (!($package_name -like $permanent_packages)) {
+                $short_package = ($package_name -split '~')[0]
+                Write-Host "`t`tRemoving $short_package ... " -NoNewline -ForegroundColor White
+                DISM /Image:"${bootwim}_mount" /Remove-Package /PackageName:$package_name > $null
+                if ($? -ne 0) {
+                    Write-Host "OK" -ForegroundColor Green
+                } else {
+                    Write-Host "Failed" -ForegroundColor Red
+                }
             }
         }
-    }
 
-    AddDriversToWIM $bootwim ".\winpe\drivers"
+        Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
+        if (AddDriversToWIM $bootwim ".\winpe\drivers") {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
 
-    FinishWIM $bootwim
+        Write-Host -ForegroundColor White "`t`tSetting TargetPath to X:... " -NoNewline
+        if (SetWinPETargetPath $bootwim "X:\") {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
 
-    New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
-    Write-Host "`tExporting '$bootwim'..." -NoNewline -ForegroundColor White
-    $exported = ExportWIMIndex $bootwim ($destinationfolder + $architecture + "\" + 'boot.wim') 1
+        Write-Host -ForegroundColor White "`t`tOptimizing image... " -NoNewline
+        if (OptimizeWIM $bootwim) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
 
-    if ($exported -eq $true) {
-        Write-Host "OK" -ForegroundColor Green
+        Write-Host -ForegroundColor White "`t`tCommiting changes... " -NoNewline
+        if (FinishWIM $bootwim) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
+
+        New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
+
+        Write-Host "`t`tExporting boot.wim..." -NoNewline -ForegroundColor White
+        if (ExportWIMIndex $bootwim ($destinationfolder + "\" + 'boot.wim') 1) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
     } else {
         Write-Host "Failed" -ForegroundColor Red
     }
@@ -191,7 +306,12 @@ $list_isos = Get-ChildItem -Path "$sourcefolder\*\*\*.iso"
 foreach($iso in $list_isos){
     Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
     ExtractISO $iso $tempfolder $overwrite
-    #PrepareWinPE $iso $outputfolder
+    PrepareWinPEWIM $iso $outputfolder
+    #PrepareInstallWIM $iso $outputfolder
+
+    Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
+    CopyBootFiles $iso $outputfolder
+    Write-Host "OK" -ForegroundColor Green
 }
 
 Write-Host "All Done!"
