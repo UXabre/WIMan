@@ -82,7 +82,7 @@ function ExtractWIM($wimFile, $index) {
 
     New-Item -ItemType directory -Path "${wimFile}_mount/" -Force | Out-Null
 
-    Dism /Mount-Image /ImageFile:"$wimFile" /index:1 /MountDir:"${wimFile}_mount" > $null
+    Dism /Mount-Image /ImageFile:"$wimFile" /index:1 /MountDir:"${wimFile}_mount"
 
     if ($? -ne 0) { return $true; }
     return $false;
@@ -109,6 +109,25 @@ function SetWinPETargetPath($wimFile, $targetPath) {
 function FinishWIM($wimFile) {
     Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Commit > $null
     if ($? -ne 0) {
+        return $true
+    } else {
+        return $false
+    }
+}
+
+function ConfigureWinPEConsole($wimFile) {
+    $result = 0
+
+    reg load HKLM\boot.wim_HKCU\ "${wimFile}_mount\windows\system32\config\default"
+    $result += $?
+    reg add HKLM\boot.wim_HKCU\Console\ /v Fullscreen /t REG_DWORD /d 1
+    $result += $?
+    reg add HKLM\boot.wim_HKCU\Console\ /v WindowAlpha /t REG_DWORD /d 180
+    $result += $?
+    reg unload HKLM\boot.wim_HKCU\
+    $result += $?
+
+    if ($result -eq 0) {
         return $true
     } else {
         return $false
@@ -171,7 +190,7 @@ function PrepareInstallWIM($iso, $outputfolder) {
     For ($imageIndex=1; $i -le $amountOfImages; $imageIndex++) {
         $imageName = $metaData.WIM.IMAGE[$imageIndex].NAME
 
-        Write-Host "`t`tExtracting [$imageIndex/$amountOfImages] $imageName " -ForegroundColor White -NoNewLine
+        Write-Host "`tExtracting [$imageIndex/$amountOfImages] $imageName " -ForegroundColor White -NoNewLine
         if (ExtractWIM $installwim $imageIndex) {
             Write-Host "OK" -ForegroundColor Green
             Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
@@ -197,8 +216,8 @@ function PrepareInstallWIM($iso, $outputfolder) {
 
             New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
 
-            Write-Host "`t`tExporting '$installwim'..." -NoNewline -ForegroundColor White
-            if (ExportWIMIndex $installwim ($destinationfolder + "\" + '$imageName.wim') $imageIndex) {
+            Write-Host "`t`tExporting '$imageName'..." -NoNewline -ForegroundColor White
+            if (ExportWIMIndex $installwim ($destinationfolder + "\$imageName.wim") $imageIndex) {
                 Write-Host "OK" -ForegroundColor Green
             } else {
                 Write-Host "Failed" -ForegroundColor Red
@@ -243,6 +262,13 @@ function PrepareWinPEWIM($iso, $outputfolder) {
                     Write-Host "Failed" -ForegroundColor Red
                 }
             }
+        }
+
+        Write-Host "`t`Configuring WinPE Console... " -NoNewline -ForegroundColor White
+        if (ConfigureWinPEConsole $bootwim) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
         }
 
         Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
@@ -331,8 +357,8 @@ foreach($iso in $list_isos){
     Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
     ExtractISO $iso $tempfolder $overwrite
 
-    #PrepareWinPEWIM $iso $outputfolder
-    PrepareInstallWIM $iso $outputfolder
+    PrepareWinPEWIM $iso $outputfolder
+    #PrepareInstallWIM $iso $outputfolder
 
     Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
     CopyBootFiles $iso $outputfolder
