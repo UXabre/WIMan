@@ -195,8 +195,8 @@ function PrepareInstallWIM($iso, $outputfolder) {
     $amountOfImages = $metaData.WIM.IMAGE.Length
     Write-Host "`tFound " $amountOfImages "images!"
 
-    For ($imageIndex=1; $i -le $amountOfImages; $imageIndex++) {
-        $imageName = $metaData.WIM.IMAGE[$imageIndex].NAME
+    For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
+        $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
 
         Write-Host "`tExtracting [$imageIndex/$amountOfImages] $imageName " -ForegroundColor White -NoNewLine
         if (ExtractWIM $installwim $imageIndex) {
@@ -366,7 +366,7 @@ foreach($iso in $list_isos){
     ExtractISO $iso $tempfolder $overwrite
 
     PrepareWinPEWIM $iso $outputfolder
-    #PrepareInstallWIM $iso $outputfolder
+    PrepareInstallWIM $iso $outputfolder
 
     Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
     CopyBootFiles $iso $outputfolder
