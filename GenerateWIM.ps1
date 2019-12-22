@@ -56,8 +56,9 @@ function ExtractISO($iso, $outputfolder, $overwrite) {
 }
 
 function PrepareWIM($wimFile) {
+    reg unload HKLM\boot.wim_HKCU\ 2>&1> $null
     Set-ItemProperty "$wimFile" -name IsReadOnly -value $false
-    Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Discard > $null
+    Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Discard 2>&1> $null
 }
 
 function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
@@ -65,7 +66,7 @@ function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
         Remove-Item "$exportedWimFile" -Force | Out-Null
     }
 
-    Dism /Export-Image /SourceImageFile:"$wimFile" /SourceIndex:$index /DestinationImageFile:"$exportedWimFile" /Compress:max /Bootable > $null
+    Dism /Export-Image /SourceImageFile:"$wimFile" /SourceIndex:$index /DestinationImageFile:"$exportedWimFile" /Compress:max /Bootable 2>&1> $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -89,7 +90,7 @@ function ExtractWIM($wimFile, $index) {
 }
 
 function OptimizeWIM($wimFile) {
-    DISM /Cleanup-Image /Image="${wimFile}_mount" /StartComponentCleanup /ResetBase  > $null
+    DISM /Cleanup-Image /Image="${wimFile}_mount" /StartComponentCleanup /ResetBase  2>&1> $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -98,7 +99,7 @@ function OptimizeWIM($wimFile) {
 }
 
 function SetWinPETargetPath($wimFile, $targetPath) {
-    Dism /Image:"${wimFile}_mount" /Set-TargetPath:"$targetPath" > $null
+    Dism /Image:"${wimFile}_mount" /Set-TargetPath:"$targetPath" 2>&1> $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -107,7 +108,7 @@ function SetWinPETargetPath($wimFile, $targetPath) {
 }
 
 function FinishWIM($wimFile) {
-    Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Commit > $null
+    Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Commit 2>&1> $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -118,16 +119,16 @@ function FinishWIM($wimFile) {
 function ConfigureWinPEConsole($wimFile) {
     $result = 0
 
-    reg load HKLM\boot.wim_HKCU\ "${wimFile}_mount\windows\system32\config\default"
+    reg load HKLM\boot.wim_HKCU\ "${wimFile}_mount\windows\system32\config\default" 2>&1> $null
     $result += $?
-    reg add HKLM\boot.wim_HKCU\Console\ /v Fullscreen /t REG_DWORD /d 1
+    reg add HKLM\boot.wim_HKCU\Console\ /v Fullscreen /t REG_DWORD /d 1 /f 2>&1> $null
     $result += $?
-    reg add HKLM\boot.wim_HKCU\Console\ /v WindowAlpha /t REG_DWORD /d 180
+    reg add HKLM\boot.wim_HKCU\Console\ /v WindowAlpha /t REG_DWORD /d 180 /f 2>&1> $null
     $result += $?
-    reg unload HKLM\boot.wim_HKCU\
+    reg unload HKLM\boot.wim_HKCU\ 2>&1> $null
     $result += $?
 
-    if ($result -eq 0) {
+    if ($result -eq 4) {
         return $true
     } else {
         return $false
@@ -262,7 +263,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             if (!($package_name -like $permanent_packages)) {
                 $short_package = ($package_name -split '~')[0]
                 Write-Host "`t`tRemoving $short_package ... " -NoNewline -ForegroundColor White
-                DISM /Image:"${bootwim}_mount" /Remove-Package /PackageName:$package_name > $null
+                DISM /Image:"${bootwim}_mount" /Remove-Package /PackageName:$package_name 2>&1> $null
                 if ($? -ne 0) {
                     Write-Host "OK" -ForegroundColor Green
                 } else {
@@ -271,7 +272,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             }
         }
 
-        Write-Host "`t`Configuring WinPE Console... " -NoNewline -ForegroundColor White
+        Write-Host "`t`tConfiguring WinPE Console... " -NoNewline -ForegroundColor White
         if (ConfigureWinPEConsole $bootwim) {
             Write-Host "OK" -ForegroundColor Green
         } else {
@@ -364,7 +365,7 @@ foreach($iso in $list_isos){
     Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
     ExtractISO $iso $tempfolder $overwrite
 
-    #PrepareWinPEWIM $iso $outputfolder
+    PrepareWinPEWIM $iso $outputfolder
     #PrepareInstallWIM $iso $outputfolder
 
     Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
