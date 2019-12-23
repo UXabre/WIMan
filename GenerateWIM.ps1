@@ -155,7 +155,7 @@ function AddDriversToWIM($wimFile, $driverFolder) {
 }
 
 function AddUpdatesToWIM($wimFile, $packageFolder) {
-    Add-WindowsPackage -PackagePath $packageFolder -Path "${wimFile}_mount" -Recurse
+    Add-WindowsPackage -PackagePath $packageFolder -Path "${wimFile}_mount"
 
     if ($? -ne 0) { return $true; }
     return $false;
@@ -469,9 +469,6 @@ function DetectWindowsName($iso) {
     Write-Host "$windowsBase" -ForegroundColor Yellow
 }
 
-$OriginalPref = $ProgressPreference
-$ProgressPreference = "SilentlyContinue"
-
 $folder = New-Item -Force -ItemType directory -Path $tempfolder
 $folder.Attributes += 'HIDDEN'
 
@@ -492,4 +489,3 @@ foreach($iso in $list_isos){
 }
 
 Write-Host "All Done!"
-$ProgressPreference = $OriginalPref
