@@ -48,7 +48,7 @@ function ExtractISO($iso, $outputfolder, $overwrite) {
             Copy-If-Newer $source_file $destination_file
         }
 
-        $hide = Dismount-DiskImage -ImagePath $mount.ImagePath
+        Dismount-DiskImage -ImagePath $mount.ImagePath | Out-Null
         Write-Host "Copy complete" -ForegroundColor Green
     } else {
         Write-Host "`tERROR: Could not mount ISO for source [" ([System.IO.FileInfo]$iso).Directory.Name "], check if file is already in use" -ForegroundColor Red
@@ -83,7 +83,8 @@ function ExtractWIM($wimFile, $index) {
 
     New-Item -ItemType directory -Path "${wimFile}_mount/" -Force | Out-Null
 
-    Dism /Mount-Image /ImageFile:"$wimFile" /index:1 /MountDir:"${wimFile}_mount"
+    #Dism /Mount-Image /ImageFile:"$wimFile" /index:1 /MountDir:"${wimFile}_mount"
+    Mount-WindowsImage -ImagePath "$wimFile" -Index 1 -Path "${wimFile}_mount" -Optimize
 
     if ($? -ne 0) { return $true; }
     return $false;
@@ -119,6 +120,17 @@ function FinishWIM($wimFile) {
 function ConfigureWinPEConsole($wimFile) {
     $result = 0
 
+    $Acl = Get-Acl ("${wimFile}_mount\windows\system32\winpe.jpg")
+    $result += $?
+    $Ar = New-Object  system.security.accesscontrol.filesystemaccessrule("Administrators","FullControl","Allow")
+    $result += $?
+    $Acl.SetAccessRule($Ar)
+    $result += $?
+    Set-Acl ("${wimFile}_mount\windows\system32\winpe.jpg") $Acl
+    $result += $?
+    Copy-Item "$pwd\theme\winPE\winpe.jpg" -Destination "${wimFile}_mount\windows\system32\winpe.jpg" -Force | Out-Null
+    $result += $?
+
     reg load HKLM\boot.wim_HKCU\ "${wimFile}_mount\windows\system32\config\default" 2>&1> $null
     $result += $?
     reg add HKLM\boot.wim_HKCU\Console\ /v Fullscreen /t REG_DWORD /d 1 /f 2>&1> $null
@@ -128,7 +140,7 @@ function ConfigureWinPEConsole($wimFile) {
     reg unload HKLM\boot.wim_HKCU\ 2>&1> $null
     $result += $?
 
-    if ($result -eq 4) {
+    if ($result -eq 9) {
         return $true
     } else {
         return $false
@@ -142,16 +154,25 @@ function AddDriversToWIM($wimFile, $driverFolder) {
     return $false;
 }
 
+function AddUpdatesToWIM($wimFile, $packageFolder) {
+    # $list_isos = Get-ChildItem -Path "$sourcefolder\*\*\*.iso"
+
+    Dism /Image:"${wimFile}_mount" /Add-Package /PackagePath:$packageFolder /recurse
+
+    if ($? -ne 0) { return $true; }
+    return $false;
+}
+
 function ExtractXMLFromWIM($wimfile) {
     $rawWIM = [System.IO.File]::OpenRead($wimfile)
 
-    $position = $rawWIM.seek(0x50,0)
+    $rawWIM.seek(0x50,0)
     $bytes = New-Object -TypeName Byte[] -ArgumentList 8
-    $bytesRead = $rawWIM.read($bytes,0,$bytes.Length)
+    $rawWIM.read($bytes,0,$bytes.Length)
     $xmlSize = $rawWIM.Length - [System.BitConverter]::toInt64($bytes, 0) - 2
     $position = $rawWIM.seek(-$xmlSize,'END')
     $bytes = New-Object -TypeName Byte[] -ArgumentList $xmlSize
-    $bytesRead = $rawWIM.read($bytes,0,$bytes.Length)
+    $rawWIM.read($bytes,0,$bytes.Length)
 
     $rawWIM.Close()
     [xml]$result = [System.Text.Encoding]::Unicode.getString($bytes, 0, $bytes.Length)
@@ -198,11 +219,24 @@ function PrepareInstallWIM($iso, $outputfolder) {
     For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
         $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
 
-        Write-Host "`tExtracting [$imageIndex/$amountOfImages] $imageName " -ForegroundColor White -NoNewLine
+        Write-Host "`tExtracting [$imageIndex/$amountOfImages] " -ForegroundColor White -NoNewLine
+        Write-Host "$imageName " -ForegroundColor Yellow -NoNewLine
         if (ExtractWIM $installwim $imageIndex) {
             Write-Host "OK" -ForegroundColor Green
-            Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
-            if (AddDriversToWIM $installwim ".\drivers") {
+
+            Write-Host "`t`tAdding drivers... " -ForegroundColor White
+            $list_drivers = Get-ChildItem -Directory -Path "$tempfolder$sourcefolder\drivers\*\"
+            foreach ($driver in $list_drivers) {
+                Write-Host "`t`tAdding driver $driver... " -ForegroundColor White
+                if (AddDriversToWIM $installwim "$tempfolder$sourcefolder\drivers") {
+                    Write-Host "OK" -ForegroundColor Green
+                } else {
+                    Write-Host "Failed" -ForegroundColor Red
+                }
+            }
+
+            Write-Host "`t`tAdding updates... " -NoNewline -ForegroundColor White
+            if (AddUpdatesToWIM $installwim "$tempfolder$sourcefolder\updates") {
                 Write-Host "OK" -ForegroundColor Green
             } else {
                 Write-Host "Failed" -ForegroundColor Red
@@ -246,11 +280,6 @@ function PrepareWinPEWIM($iso, $outputfolder) {
     if (ExtractWIM $bootwim 1) {
         Write-Host "OK" -ForegroundColor Green
         # Do magic here!
-        $Acl = Get-Acl ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg')
-        $Ar = New-Object  system.security.accesscontrol.filesystemaccessrule("Administrators","FullControl","Allow")
-        $Acl.SetAccessRule($Ar)
-        Set-Acl ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg') $Acl
-        Copy-Item ".\theme\winPE\winpe.jpg" -Destination ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\windows\system32\winpe.jpg') -Force | Out-Null
 
         Copy-Item ".\winpe\overlay\*" -Destination ($tempfolder + $sourcefolder + '\sources\boot.wim_mount\') -Recurse -Force | Out-Null
 
@@ -279,12 +308,26 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             Write-Host "Failed" -ForegroundColor Red
         }
 
-        Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
-        if (AddDriversToWIM $bootwim ".\winpe\drivers") {
-            Write-Host "OK" -ForegroundColor Green
-        } else {
-            Write-Host "Failed" -ForegroundColor Red
+        Write-Host "`t`tAdding drivers... " -ForegroundColor White
+        $list_drivers = Get-ChildItem -Directory -Path ".\winpe\drivers\*\"
+        foreach ($driver in $list_drivers) {
+            Write-Host "`t`t`tAdding driver " -ForegroundColor White -NoNewLine
+            Write-Host $driver.Name -ForegroundColor Cyan -NoNewLine
+            Write-Host "... " -ForegroundColor White -NoNewLine
+
+            if (AddDriversToWIM $bootwim $driver) {
+                Write-Host "OK" -ForegroundColor Green
+            } else {
+                Write-Host "Failed" -ForegroundColor Red
+            }
         }
+
+        # Write-Host "`t`tAdding drivers... " -NoNewline -ForegroundColor White
+        # if (AddDriversToWIM $bootwim ".\winpe\drivers") {
+        #     Write-Host "OK" -ForegroundColor Green
+        # } else {
+        #     Write-Host "Failed" -ForegroundColor Red
+        # }
 
         Write-Host -ForegroundColor White "`t`tSetting TargetPath to X:... " -NoNewline
         if (SetWinPETargetPath $bootwim "X:\") {
@@ -309,7 +352,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
 
         New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
 
-        Write-Host "`t`tExporting boot.wim..." -NoNewline -ForegroundColor White
+        Write-Host "`t`tExporting boot.wim... " -NoNewline -ForegroundColor White
         if (ExportWIMIndex $bootwim ($destinationfolder + "\" + 'boot.wim') 1) {
             Write-Host "OK" -ForegroundColor Green
         } else {
@@ -324,8 +367,8 @@ function PrepareWinPEWIM($iso, $outputfolder) {
 
 $DedicatedWimFiles = Get-ChildItem -Recurse ".\winpe\images\*\boot.wim"
 
-if ( ($DedicatedWimFiles | Measure-Object | %{$_.Count}) -gt 0 ) {
-    Write-Host "Found" ($DedicatedWimFiles | Measure-Object | %{$_.Count}) "dedicated winpe.wim file(s)!" -ForegroundColor White
+if ( ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) -gt 0 ) {
+    Write-Host "Found" ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) "dedicated winpe.wim file(s)!" -ForegroundColor White
 } else {
     $install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
 
@@ -335,7 +378,7 @@ if ( ($DedicatedWimFiles | Measure-Object | %{$_.Count}) -gt 0 ) {
         try {
             Get-Command "choco" | Out-Null
         } catch {
-            iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
         }
 
         choco install windows-adk-winpe -y --installargs="/installPath `"$pwd\.tmp\wadk-winpe\`""
@@ -356,6 +399,21 @@ if ( ($DedicatedWimFiles | Measure-Object | %{$_.Count}) -gt 0 ) {
     }
 }
 
+function DetectWindowsName($iso) {
+    $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
+    $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
+    $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
+    $installwim = $tempfolder + $sourcefolder + '\sources\install.wim'
+
+    $metaData = ExtractXMLFromWIM $installwim
+    $windowsBase = $metaData.WIM.IMAGE[0].NAME.Substring(0, $metaData.WIM.IMAGE[0].NAME.LastIndexOf(' '))
+    Write-Host "`tDetected " -NoNewLine
+    Write-Host "$windowsBase" -ForegroundColor Yellow
+}
+
+$OriginalPref = $ProgressPreference
+$ProgressPreference = "SilentlyContinue"
+
 $folder = New-Item -Force -ItemType directory -Path $tempfolder
 $folder.Attributes += 'HIDDEN'
 
@@ -365,8 +423,10 @@ foreach($iso in $list_isos){
     Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
     ExtractISO $iso $tempfolder $overwrite
 
+    DetectWindowsName $iso
+
     PrepareWinPEWIM $iso $outputfolder
-    PrepareInstallWIM $iso $outputfolder
+   # PrepareInstallWIM $iso $outputfolder
 
     Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
     CopyBootFiles $iso $outputfolder
@@ -374,3 +434,4 @@ foreach($iso in $list_isos){
 }
 
 Write-Host "All Done!"
+$ProgressPreference = $OriginalPref
