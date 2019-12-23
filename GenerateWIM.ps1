@@ -62,7 +62,10 @@ function ExtractISO($iso, $outputfolder, $overwrite) {
 function PrepareWIM($wimFile) {
     reg unload HKLM\boot.wim_HKCU\ 2>&1> $null
     Set-ItemProperty "$wimFile" -name IsReadOnly -value $false
-    Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Discard 2>&1> $null
+
+    try {
+        Dismount-WindowsImage -Path "${wimFile}_mount" -Discard 2>&1> $null
+    } catch {}
 }
 
 function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
@@ -70,7 +73,7 @@ function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
         Remove-Item "$exportedWimFile" -Force | Out-Null
     }
 
-    Dism /Export-Image /SourceImageFile:"$wimFile" /SourceIndex:$index /DestinationImageFile:"$exportedWimFile" /Compress:max /Bootable 2>&1> $null
+    Export-WindowsImage -SourceImagePath "$wimFile" -SourceIndex $index -DestinationImagePath "$exportedWimFile" -CompressionType "max" -SetBootable 2>&1> $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -87,7 +90,6 @@ function ExtractWIM($wimFile, $index) {
 
     New-Item -ItemType directory -Path "${wimFile}_mount/" -Force | Out-Null
 
-    #Dism /Mount-Image /ImageFile:"$wimFile" /index:1 /MountDir:"${wimFile}_mount"
     Mount-WindowsImage -ImagePath "$wimFile" -Index 1 -Path "${wimFile}_mount" -Optimize
 
     if ($? -ne 0) { return $true; }
@@ -113,7 +115,7 @@ function SetWinPETargetPath($wimFile, $targetPath) {
 }
 
 function FinishWIM($wimFile) {
-    Dism /Unmount-Image /MountDir:"${wimFile}_mount" /Commit 2>&1> $null
+    Dismount-WindowsImage -Path "${wimFile}_mount" -Save 2>&1> $null
     if ($? -ne 0) {
         return $true
     } else {
@@ -152,7 +154,7 @@ function ConfigureWinPEConsole($wimFile) {
 }
 
 function AddDriversToWIM($wimFile, $driverFolder) {
-    Dism /Image:"${wimFile}_mount" /Add-Driver /Driver:$driverFolder /recurse /ForceUnsigned
+    Add-WindowsDriver -Path "${wimFile}_mount" -Driver $driverFolder -Recurse -ForceUnsigned
 
     if ($? -ne 0) { return $true; }
     return $false;
@@ -201,8 +203,6 @@ function PrepareInstallWIM($iso, $outputfolder) {
     $metaData = ExtractXMLFromWIM $installwim
     $amountOfImages = $metaData.WIM.IMAGE.Length
     Write-Host "`tFound " $amountOfImages "images!"
-
-    $amountOfImages = 1
 
     For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
         $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
@@ -344,7 +344,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             if (!($package_name -like $permanent_packages)) {
                 $short_package = ($package_name -split '~')[0]
                 Write-Host "`t`tRemoving $short_package ... " -NoNewline -ForegroundColor White
-                DISM /Image:"${bootwim}_mount" /Remove-Package /PackageName:$package_name 2>&1> $null
+                Remove-WindowsPackage -Path "${bootwim}_mount" -PackageName $package_name 2>&1> $null
                 if ($? -ne 0) {
                     Write-Host "OK" -ForegroundColor Green
                 } else {
