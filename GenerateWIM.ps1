@@ -167,8 +167,12 @@ function ExtractXMLFromWIM($wimfile) {
     $rawWIM.seek(0x50,0)
     $bytes = New-Object -TypeName Byte[] -ArgumentList 8
     $rawWIM.read($bytes,0,$bytes.Length)
-    $xmlSize = $rawWIM.Length - [System.BitConverter]::toInt64($bytes, 0) - 2
-    $position = $rawWIM.seek(-$xmlSize,'END')
+    $startOfXML = [System.BitConverter]::toInt64($bytes, 0)
+    $rawWIM.read($bytes,0,$bytes.Length)
+    $endOfXML = $startOfXML + [System.BitConverter]::toInt64($bytes, 0)
+
+    $xmlSize = $endOfXML - $startOfXML - 2
+    $position = $rawWIM.seek($startOfXML + 2, 0)
     $bytes = New-Object -TypeName Byte[] -ArgumentList $xmlSize
     $rawWIM.read($bytes,0,$bytes.Length)
 
@@ -213,8 +217,6 @@ function PrepareInstallWIM($iso, $outputfolder) {
     $metaData = ExtractXMLFromWIM $installwim
     $amountOfImages = $metaData.WIM.IMAGE.Length
     Write-Host "`tFound " $amountOfImages "images!"
-
-    $amountOfImages = 1
 
     For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
         $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
