@@ -1,6 +1,10 @@
 param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\")
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
+# Includes
+. ".\inc\ExtractXMLFromWIM.ps1"
+
+# Local Code
 function Copy-If-Newer($source_file, $destination_file) {
     New-Item -Force -ItemType directory -Path ([System.IO.FileInfo]$destination_file).Directory.FullName | Out-Null
     if ( !(Test-Path $destination_file -PathType Leaf) -or
@@ -161,26 +165,6 @@ function AddUpdatesToWIM($wimFile, $packageFolder) {
     return $false;
 }
 
-function ExtractXMLFromWIM($wimfile) {
-    $rawWIM = [System.IO.File]::OpenRead($wimfile)
-
-    $rawWIM.seek(0x50,0)
-    $bytes = New-Object -TypeName Byte[] -ArgumentList 8
-    $rawWIM.read($bytes,0,$bytes.Length)
-    $startOfXML = [System.BitConverter]::toInt64($bytes, 0)
-    $rawWIM.read($bytes,0,$bytes.Length)
-    $endOfXML = $startOfXML + [System.BitConverter]::toInt64($bytes, 0)
-
-    $xmlSize = $endOfXML - $startOfXML - 2
-    $position = $rawWIM.seek($startOfXML + 2, 0)
-    $bytes = New-Object -TypeName Byte[] -ArgumentList $xmlSize
-    $rawWIM.read($bytes,0,$bytes.Length)
-
-    $rawWIM.Close()
-    [xml]$result = [System.Text.Encoding]::Unicode.getString($bytes, 0, $bytes.Length)
-    return $result
-}
-
 function CopyBootFiles($iso, $outputfolder) {
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
     $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
@@ -217,6 +201,8 @@ function PrepareInstallWIM($iso, $outputfolder) {
     $metaData = ExtractXMLFromWIM $installwim
     $amountOfImages = $metaData.WIM.IMAGE.Length
     Write-Host "`tFound " $amountOfImages "images!"
+
+    $amountOfImages = 1
 
     For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
         $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
