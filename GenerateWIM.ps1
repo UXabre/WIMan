@@ -1,4 +1,4 @@
-param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\")
+param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\", [int]$Optimization = 1)
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
 # Includes
@@ -69,10 +69,6 @@ function PrepareWIM($wimFile) {
 }
 
 function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
-    if (Test-Path "$exportedWimFile" -PathType Leaf) {
-        Remove-Item "$exportedWimFile" -Force | Out-Null
-    }
-
     Export-WindowsImage -SourceImagePath "$wimFile" -SourceIndex $index -DestinationImagePath "$exportedWimFile" -CompressionType "max" -SetBootable 2>&1> $null
     if ($? -ne 0) {
         return $true
@@ -195,6 +191,7 @@ function CopyBootFiles($iso, $outputfolder) {
 }
 
 function PrepareInstallWIM($iso, $outputfolder) {
+
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
     $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
     $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
@@ -204,8 +201,32 @@ function PrepareInstallWIM($iso, $outputfolder) {
     $amountOfImages = $metaData.WIM.IMAGE.Length
     Write-Host "`tFound " $amountOfImages "images!"
 
+    New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
+    Remove-Item -Force -Path "$destinationfolder\images.ini" 2>&1> $null
+
+    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude ($destinationfolder + "\boot.wim")
+    foreach ($oldImage in $oldImages) {
+        Write-Host "`t`tDeleting older "($oldImage.FileName)"... " -NoNewline -ForegroundColor White
+        Remove-Item $oldImage -Force | Out-Null
+
+        if ($? -eq 0) {
+            Write-Host "OK" -ForegroundColor Green
+        } else {
+            Write-Host "Failed" -ForegroundColor Red
+        }
+    }
+
     For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
         $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
+        $fileName = $imageName
+
+        if ($Optimization -eq 1) {
+            $fileName = $metaData.WIM.IMAGE[$imageIndex-1].WINDOWS.INSTALLATIONTYPE + ".wim"
+        } elseif ($Optimization -eq 2) {
+            $fileName = $metaData.WIM.IMAGE[$imageIndex-1].WINDOWS.EDITIONID + ".wim"
+        } elseif ($Optimization -eq 3) {
+            $fileName = "install.wim"
+        }
 
         Write-Host "`tExtracting [$imageIndex/$amountOfImages] " -ForegroundColor White -NoNewLine
         Write-Host "$imageName " -ForegroundColor Yellow -NoNewLine
@@ -308,14 +329,17 @@ function PrepareInstallWIM($iso, $outputfolder) {
                 Write-Host "Failed" -ForegroundColor Red
             }
 
-            New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
-
             Write-Host "`t`tExporting '$imageName'..." -NoNewline -ForegroundColor White
-            if (ExportWIMIndex $installwim ($destinationfolder + "\$imageName.wim") $imageIndex) {
+            if (ExportWIMIndex $installwim ($destinationfolder + "\$fileName") $imageIndex) {
                 Write-Host "OK" -ForegroundColor Green
             } else {
                 Write-Host "Failed" -ForegroundColor Red
             }
+
+            Write-Host "`t`tWriting entry to images.ini... " -ForegroundColor White -NoNewLine
+            $INITemplate = "$imageName=$fileName"
+            Add-Content "$destinationfolder\images.ini" $INITemplate
+            Write-Host "OK" -ForegroundColor Green
         } else {
             Write-Host "Failed" -ForegroundColor Red
         }
@@ -396,6 +420,17 @@ function PrepareWinPEWIM($iso, $outputfolder) {
         }
 
         New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
+
+        if (Test-Path ($destinationfolder + "\" + 'boot.wim') -PathType Leaf) {
+            Write-Host "`t`tDeleting older boot.wim... " -NoNewline -ForegroundColor White
+            Remove-Item ($destinationfolder + "\" + 'boot.wim') -Force | Out-Null
+
+            if ($? -eq 0) {
+                Write-Host "OK" -ForegroundColor Green
+            } else {
+                Write-Host "Failed" -ForegroundColor Red
+            }
+        }
 
         Write-Host "`t`tExporting boot.wim... " -NoNewline -ForegroundColor White
         if (ExportWIMIndex $bootwim ($destinationfolder + "\" + 'boot.wim') 1) {
