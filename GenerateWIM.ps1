@@ -191,7 +191,6 @@ function CopyBootFiles($iso, $outputfolder) {
 }
 
 function PrepareInstallWIM($iso, $outputfolder) {
-
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
     $sourcefolder = $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
     $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
@@ -204,7 +203,7 @@ function PrepareInstallWIM($iso, $outputfolder) {
     New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
     Remove-Item -Force -Path "$destinationfolder\images.ini" 2>&1> $null
 
-    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude ($destinationfolder + "\boot.wim")
+    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude ($destinationfolder + "\boot.wim") 2>&1> $null
     foreach ($oldImage in $oldImages) {
         Write-Host "`t`tDeleting older "($oldImage.FileName)"... " -NoNewline -ForegroundColor White
         Remove-Item $oldImage -Force | Out-Null
@@ -233,87 +232,99 @@ function PrepareInstallWIM($iso, $outputfolder) {
         if (ExtractWIM $installwim $imageIndex) {
             Write-Host "OK" -ForegroundColor Green
 
-            Write-Host "`t`tAdding drivers... " -ForegroundColor White
-            $list_drivers = Get-ChildItem -Directory -Path "$sourcesfolder$sourcefolder\drivers\*\"
-            foreach ($driver in $list_drivers) {
-                Write-Host "`t`t`tAdding driver " -ForegroundColor White -NoNewLine
-                Write-Host $driver.Name -ForegroundColor Cyan -NoNewLine
-                Write-Host "... " -ForegroundColor White -NoNewLine
+            Write-Host "`t`tAdding drivers... " -ForegroundColor White -NoNewLine
+            $list_drivers = Get-ChildItem -Directory -Path "$sourcesfolder$sourcefolder\drivers\*\" 2>&1> $null
+			if ($list_drivers.Count -gt 0) {
+				Write-Host
+				foreach ($driver in $list_drivers) {
+					Write-Host "`t`t`tAdding driver " -ForegroundColor White -NoNewLine
+					Write-Host $driver.Name -ForegroundColor Cyan -NoNewLine
+					Write-Host "... " -ForegroundColor White -NoNewLine
 
-                if (AddDriversToWIM $installwim $driver) {
-                    Write-Host "OK" -ForegroundColor Green
-                } else {
-                    Write-Host "Failed" -ForegroundColor Red
-                }
-            }
+					if (AddDriversToWIM $installwim $driver) {
+						Write-Host "OK" -ForegroundColor Green
+					} else {
+						Write-Host "Failed" -ForegroundColor Red
+					}
+				}
+			} else {
+				Write-Host "Skipping" -ForegroundColor Magenta
+			}
 
-            Write-Host "`t`tAdding updates... " -ForegroundColor White
-            $list_updates = Get-ChildItem -Path "$sourcesfolder\$sourcefolder\updates\*" -include *.cab, *.msu
-            foreach ($update in $list_updates) {
-                $updatefile = $update
-                if ($update.Extension -eq ".msu") {
-                    Write-Host "`t`t`tExtracting update " -ForegroundColor White -NoNewLine
-                    Write-Host $update.BaseName -ForegroundColor Cyan -NoNewLine
-                    Write-Host "... " -ForegroundColor White -NoNewLine
+            Write-Host "`t`tAdding updates... " -ForegroundColor White -NoNewLine
+            $list_updates = Get-ChildItem -Path "$sourcesfolder\$sourcefolder\updates\*" -include *.cab, *.msu 2>&1> $null
 
-                    New-Item -Force -ItemType directory -Path ($update.Directory.FullName + $update.BaseName) | Out-Null
-                    expand -F:*.cab $update ($update.Directory.FullName + $update.BaseName) | Out-Null
-                    Remove-Item -Recurse -Force ($update.Directory.FullName + $update.BaseName + "\wsusscan.cab")
+			if ($list_updates.Count -gt 0) {
+				Write-Host
 
-                    if ($? -ne 0) {
-                        Write-Host "OK" -ForegroundColor Green
-                    } else {
-                        Write-Host "Failed" -ForegroundColor Red
-                    }
+				foreach ($update in $list_updates) {
+					$updatefile = $update
+					if ($update.Extension -eq ".msu") {
+						Write-Host "`t`t`tExtracting update " -ForegroundColor White -NoNewLine
+						Write-Host $update.BaseName -ForegroundColor Cyan -NoNewLine
+						Write-Host "... " -ForegroundColor White -NoNewLine
 
-                    $embedded_updates = Get-ChildItem -Path ($update.Directory.FullName + $update.BaseName + "\*.cab")
-                    foreach ($embedded_update in $embedded_updates) {
-                        $embedded_updateInfo = Get-WindowsPackage -PackagePath $embedded_update -Path ($installwim + "_mount")
+						New-Item -Force -ItemType directory -Path ($update.Directory.FullName + $update.BaseName) | Out-Null
+						expand -F:*.cab $update ($update.Directory.FullName + $update.BaseName) | Out-Null
+						Remove-Item -Recurse -Force ($update.Directory.FullName + $update.BaseName + "\wsusscan.cab")
 
-                        Write-Host "`t`t`t`tAdding update " -ForegroundColor White -NoNewLine
-                        Write-Host $embedded_updateInfo.Description -ForegroundColor Cyan -NoNewLine
-                        Write-Host "... " -ForegroundColor White -NoNewLine
+						if ($? -ne 0) {
+							Write-Host "OK" -ForegroundColor Green
+						} else {
+							Write-Host "Failed" -ForegroundColor Red
+						}
 
-                        if (($embedded_updateInfo.PackageState -ne "Installed") -and ($embedded_updateInfo.Applicable -eq $true)) {
-                            if (AddUpdatesToWIM $installwim $embedded_update) {
-                                Write-Host "OK" -ForegroundColor Green
-                            } else {
-                                Write-Host "Failed" -ForegroundColor Red
-                            }
-                        } else {
-                            Write-Host "Skipping" -ForegroundColor Magenta
-                        }
-                    }
+						$embedded_updates = Get-ChildItem -Path ($update.Directory.FullName + $update.BaseName + "\*.cab")
+						foreach ($embedded_update in $embedded_updates) {
+							$embedded_updateInfo = Get-WindowsPackage -PackagePath $embedded_update -Path ($installwim + "_mount")
 
-                    Write-Host "`t`t`tCleaning update " -ForegroundColor White -NoNewLine
-                    Write-Host $update.BaseName -ForegroundColor Cyan -NoNewLine
-                    Write-Host "... " -ForegroundColor White -NoNewLine
+							Write-Host "`t`t`t`tAdding update " -ForegroundColor White -NoNewLine
+							Write-Host $embedded_updateInfo.Description -ForegroundColor Cyan -NoNewLine
+							Write-Host "... " -ForegroundColor White -NoNewLine
 
-                    Remove-Item -Recurse -Force ($update.Directory.FullName + $update.BaseName)
+							if (($embedded_updateInfo.PackageState -ne "Installed") -and ($embedded_updateInfo.Applicable -eq $true)) {
+								if (AddUpdatesToWIM $installwim $embedded_update) {
+									Write-Host "OK" -ForegroundColor Green
+								} else {
+									Write-Host "Failed" -ForegroundColor Red
+								}
+							} else {
+								Write-Host "Skipping" -ForegroundColor Magenta
+							}
+						}
 
-                    if ($? -ne 0) {
-                        Write-Host "OK" -ForegroundColor Green
-                    } else {
-                        Write-Host "Failed" -ForegroundColor Red
-                    }
-                } elseif ($update.Extension -eq ".cab") {
-                    $embedded_updateInfo = Get-WindowsPackage -PackagePath $updatefile -Path ($installwim + "_mount")
+						Write-Host "`t`t`tCleaning update " -ForegroundColor White -NoNewLine
+						Write-Host $update.BaseName -ForegroundColor Cyan -NoNewLine
+						Write-Host "... " -ForegroundColor White -NoNewLine
 
-                    Write-Host "`t`t`tAdding update " -ForegroundColor White -NoNewLine
-                    Write-Host $embedded_updateInfo.Name -ForegroundColor Cyan -NoNewLine
-                    Write-Host "... " -ForegroundColor White -NoNewLine
+						Remove-Item -Recurse -Force ($update.Directory.FullName + $update.BaseName)
 
-                    if ($embedded_updateInfo.State == "NotInstalled") {
-                        if (AddUpdatesToWIM $installwim $updatefile) {
-                            Write-Host "OK" -ForegroundColor Green
-                        } else {
-                            Write-Host "Failed" -ForegroundColor Red
-                        }
-                    } else {
-                        Write-Host "Skipping" -ForegroundColor Magenta
-                    }
-                }
-            }
+						if ($? -ne 0) {
+							Write-Host "OK" -ForegroundColor Green
+						} else {
+							Write-Host "Failed" -ForegroundColor Red
+						}
+					} elseif ($update.Extension -eq ".cab") {
+						$embedded_updateInfo = Get-WindowsPackage -PackagePath $updatefile -Path ($installwim + "_mount")
+
+						Write-Host "`t`t`tAdding update " -ForegroundColor White -NoNewLine
+						Write-Host $embedded_updateInfo.Name -ForegroundColor Cyan -NoNewLine
+						Write-Host "... " -ForegroundColor White -NoNewLine
+
+						if ($embedded_updateInfo.State == "NotInstalled") {
+							if (AddUpdatesToWIM $installwim $updatefile) {
+								Write-Host "OK" -ForegroundColor Green
+							} else {
+								Write-Host "Failed" -ForegroundColor Red
+							}
+						} else {
+							Write-Host "Skipping" -ForegroundColor Magenta
+						}
+					}
+				}
+			} else {
+				Write-Host "Skipping" -ForegroundColor Magenta
+			}
 
             Write-Host -ForegroundColor White "`t`tOptimizing image... " -NoNewline
             if (OptimizeWIM $installwim) {
@@ -352,6 +363,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
     $destinationfolder = $outputfolder + $sourcefolder + '\sources\'
     $bootwim = $tempfolder + $sourcefolder + '\sources\boot.wim'
 
+    New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
     Write-Host "`tExtracting boot.wim " -ForegroundColor White -NoNewline
     if (ExtractWIM $bootwim 1) {
         Write-Host "OK" -ForegroundColor Green
@@ -368,12 +380,16 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             if (!($package_name -like $permanent_packages)) {
                 $short_package = ($package_name -split '~')[0]
                 Write-Host "`t`tRemoving $short_package ... " -NoNewline -ForegroundColor White
-                Remove-WindowsPackage -Path "${bootwim}_mount" -PackageName $package_name 2>&1> $null
-                if ($? -ne 0) {
-                    Write-Host "OK" -ForegroundColor Green
-                } else {
-                    Write-Host "Failed" -ForegroundColor Red
-                }
+				try {
+					Remove-WindowsPackage -Path "${bootwim}_mount" -PackageName $package_name | Out-Null
+					if ($? -ne 0) {
+						Write-Host "OK" -ForegroundColor Green
+					} else {
+						Write-Host "Failed" -ForegroundColor Red
+					}
+				} catch {
+					Write-Host "Failed" -ForegroundColor Red
+				}
             }
         }
 
@@ -384,19 +400,24 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             Write-Host "Failed" -ForegroundColor Red
         }
 
-        Write-Host "`t`tAdding drivers... " -ForegroundColor White
-        $list_drivers = Get-ChildItem -Directory -Path ".\winpe\drivers\*\"
-        foreach ($driver in $list_drivers) {
-            Write-Host "`t`t`tAdding driver " -ForegroundColor White -NoNewLine
-            Write-Host $driver.Name -ForegroundColor Cyan -NoNewLine
-            Write-Host "... " -ForegroundColor White -NoNewLine
+        Write-Host "`t`tAdding drivers... " -ForegroundColor White -NoNewLine
+        $list_drivers = Get-ChildItem -Directory -Path ".\winpe\drivers\*\" 2>&1> $null
+		if ($list_drivers.Count -gt 0) {
+			Write-Host
+			foreach ($driver in $list_drivers) {
+				Write-Host "`t`t`tAdding driver " -ForegroundColor White -NoNewLine
+				Write-Host $driver.Name -ForegroundColor Cyan -NoNewLine
+				Write-Host "... " -ForegroundColor White -NoNewLine
 
-            if (AddDriversToWIM $bootwim $driver) {
-                Write-Host "OK" -ForegroundColor Green
-            } else {
-                Write-Host "Failed" -ForegroundColor Red
-            }
-        }
+				if (AddDriversToWIM $bootwim $driver) {
+					Write-Host "OK" -ForegroundColor Green
+				} else {
+					Write-Host "Failed" -ForegroundColor Red
+				}
+			}
+		} else {
+			Write-Host "Skipping" -ForegroundColor Magenta
+		}
 
         Write-Host -ForegroundColor White "`t`tSetting TargetPath to X:... " -NoNewline
         if (SetWinPETargetPath $bootwim "X:\") {
@@ -445,38 +466,40 @@ function PrepareWinPEWIM($iso, $outputfolder) {
 
 # MAIN starts here!
 
-$DedicatedWimFiles = Get-ChildItem -Recurse ".\winpe\images\*\boot.wim"
+function DetectAndInstallWAIK() {
+	$DedicatedWimFiles = Get-ChildItem -Recurse ".\winpe\images\*\boot.wim" 2>&1> $null
 
-if ( ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) -gt 0 ) {
-    Write-Host "Found" ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) "dedicated winpe.wim file(s)!" -ForegroundColor White
-} else {
-    $install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
+	if ( ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) -gt 0 ) {
+		Write-Host "Found" ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) "dedicated winpe.wim file(s)!" -ForegroundColor White
+	} else {
+		$install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
 
-    if ($install_WAIK_winpe -eq 'n') {
-        Write-Host "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!" -ForegroundColor White
-    } else {
-        try {
-            Get-Command "choco" | Out-Null
-        } catch {
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-        }
+		if ($install_WAIK_winpe -eq 'n') {
+			Write-Host "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!" -ForegroundColor White
+		} else {
+			try {
+				Get-Command "choco" | Out-Null
+			} catch {
+				Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+			}
 
-        choco install windows-adk-winpe -y --installargs="/installPath `"$pwd\.tmp\wadk-winpe\`""
+			choco install windows-adk-winpe -y --installargs="/installPath `"$pwd\.tmp\wadk-winpe\`""
 
-        if ($? -ne 0) {
-            Write-Host "Successfully installed WAIK-WINPE" -ForegroundColor Green
-            $wim_boot_files = Get-ChildItem -Path ".\.tmp\wadk-winpe\*\winpe.wim" -Recurse
-            foreach($wim_boot_file in $wim_boot_files){
-                $architecture = $wim_boot_file.Directory.Parent.Name
-                Write-Host $wim_boot_file $architecture
-                New-Item -Force -ItemType directory -Path ".\winpe\images\$architecture\" | Out-Null
-                Move-Item "$wim_boot_file" ".\winpe\images\$architecture\boot.wim"
-            }
-        } else {
-            Write-Host "Failed installing WAIK-WINPE. Install it manually and copy the winpe.wim file to .\winpe." -ForegroundColor Red
-            Exit -1
-        }
-    }
+			if ($? -ne 0) {
+				Write-Host "Successfully installed WAIK-WINPE" -ForegroundColor Green
+				$wim_boot_files = Get-ChildItem -Path ".\.tmp\wadk-winpe\*\winpe.wim" -Recurse 2>&1> $null
+				foreach($wim_boot_file in $wim_boot_files){
+					$architecture = $wim_boot_file.Directory.Parent.Name
+					Write-Host $wim_boot_file $architecture
+					New-Item -Force -ItemType directory -Path ".\winpe\images\$architecture\" | Out-Null
+					Move-Item "$wim_boot_file" ".\winpe\images\$architecture\boot.wim"
+				}
+			} else {
+				Write-Host "Failed installing WAIK-WINPE. Install it manually and copy the winpe.wim file to .\winpe." -ForegroundColor Red
+				Exit -1
+			}
+		}
+	}
 }
 
 function DetectWindowsName($iso) {
@@ -489,6 +512,8 @@ function DetectWindowsName($iso) {
     Write-Host "`tDetected " -NoNewLine
     Write-Host "$windowsBase" -ForegroundColor Yellow
 }
+
+DetectAndInstallWAIK
 
 $folder = New-Item -Force -ItemType directory -Path $tempfolder
 $folder.Attributes += 'HIDDEN'
