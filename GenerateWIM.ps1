@@ -208,7 +208,7 @@ function PrepareInstallWIM($iso, $outputfolder) {
         Write-Host "`t`tDeleting older "($oldImage.FileName)"... " -NoNewline -ForegroundColor White
         Remove-Item $oldImage -Force | Out-Null
 
-        if ($? -eq 0) {
+        if ($? -ne 0) {
             Write-Host "OK" -ForegroundColor Green
         } else {
             Write-Host "Failed" -ForegroundColor Red
@@ -446,7 +446,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
             Write-Host "`t`tDeleting older boot.wim... " -NoNewline -ForegroundColor White
             Remove-Item ($destinationfolder + "\" + 'boot.wim') -Force | Out-Null
 
-            if ($? -eq 0) {
+            if ($? -ne 0) {
                 Write-Host "OK" -ForegroundColor Green
             } else {
                 Write-Host "Failed" -ForegroundColor Red
