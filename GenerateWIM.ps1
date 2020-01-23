@@ -169,7 +169,7 @@ function CopyBootFiles($iso, $outputfolder) {
     $destinationfolder = $outputfolder + $sourcefolder
     $wimBootLatest = 'http://git.ipxe.org/releases/wimboot/wimboot-latest.zip'
     Invoke-WebRequest -Uri $wimBootLatest -OutFile "$tempfolder\wimboot-latest.zip"
-    [System.IO.Compression.ZipFile]::ExtractToDirectory("$tempfolder\wimboot-latest.zip", "$tempfolder\wimboot-latest")
+    Expand-Archive -Path "$tempfolder\wimboot-latest.zip"  -DestinationPath "$tempfolder\wimboot-latest" -Force
 
     Get-ChildItem -Path "$tempfolder\wimboot-latest\*\wimboot" | Copy-Item -Destination "$destinationfolder\wimboot"
 
