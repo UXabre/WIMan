@@ -3,6 +3,8 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 # Includes
 . ".\inc\ExtractXMLFromWIM.ps1"
+. ".\inc\GetLatestWinPEImages.ps1"
+. ".\inc\ConvertArchitectureIdToString.ps1"
 
 # Local Code
 function Copy-If-Newer($source_file, $destination_file) {
@@ -64,12 +66,12 @@ function PrepareWIM($wimFile) {
     Set-ItemProperty "$wimFile" -name IsReadOnly -value $false
 
     try {
-        Dismount-WindowsImage -Path "${wimFile}_mount" -Discard 2>&1> $null
+        Dismount-WindowsImage -Path "${wimFile}_mount" -Discard -ErrorAction SilentlyContinue
     } catch {}
 }
 
 function ExportWIMIndex($wimFile, $exportedWimFile, $index) {
-    Export-WindowsImage -SourceImagePath "$wimFile" -SourceIndex $index -DestinationImagePath "$exportedWimFile" -CompressionType "max" -SetBootable 2>&1> $null
+    Export-WindowsImage -SourceImagePath "$wimFile" -SourceIndex $index -DestinationImagePath "$exportedWimFile" -CompressionType "max" -SetBootable -ErrorAction SilentlyContinue
     if ($? -ne 0) {
         return $true
     } else {
@@ -111,7 +113,7 @@ function SetWinPETargetPath($wimFile, $targetPath) {
 }
 
 function FinishWIM($wimFile) {
-    Dismount-WindowsImage -Path "${wimFile}_mount" -Save 2>&1> $null
+    Dismount-WindowsImage -Path "${wimFile}_mount" -Save -ErrorAction SilentlyContinue
     if ($? -ne 0) {
         return $true
     } else {
@@ -201,9 +203,9 @@ function PrepareInstallWIM($iso, $outputfolder) {
     Write-Host "`tFound " $amountOfImages "images!"
 
     New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
-    Remove-Item -Force -Path "$destinationfolder\images.ini" 2>&1> $null
+    Remove-Item -Force -Path "$destinationfolder\images.ini" -ErrorAction SilentlyContinue
 
-    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude ($destinationfolder + "\boot.wim") 2>&1> $null
+    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude ($destinationfolder + "\boot.wim") -ErrorAction SilentlyContinue
     foreach ($oldImage in $oldImages) {
         Write-Host "`t`tDeleting older "($oldImage.FileName)"... " -NoNewline -ForegroundColor White
         Remove-Item $oldImage -Force | Out-Null
@@ -233,7 +235,7 @@ function PrepareInstallWIM($iso, $outputfolder) {
             Write-Host "OK" -ForegroundColor Green
 
             Write-Host "`t`tAdding drivers... " -ForegroundColor White -NoNewLine
-            $list_drivers = Get-ChildItem -Directory -Path "$sourcesfolder$sourcefolder\drivers\*\" 2>&1> $null
+            $list_drivers = Get-ChildItem -Directory -Path "$sourcesfolder$sourcefolder\drivers\*\" -ErrorAction SilentlyContinue
 			if ($list_drivers.Count -gt 0) {
 				Write-Host
 				foreach ($driver in $list_drivers) {
@@ -252,7 +254,7 @@ function PrepareInstallWIM($iso, $outputfolder) {
 			}
 
             Write-Host "`t`tAdding updates... " -ForegroundColor White -NoNewLine
-            $list_updates = Get-ChildItem -Path "$sourcesfolder\$sourcefolder\updates\*" -include *.cab, *.msu 2>&1> $null
+            $list_updates = Get-ChildItem -Path "$sourcesfolder\$sourcefolder\updates\*" -include *.cab, *.msu  -ErrorAction SilentlyContinue
 
 			if ($list_updates.Count -gt 0) {
 				Write-Host
@@ -401,7 +403,7 @@ function PrepareWinPEWIM($iso, $outputfolder) {
         }
 
         Write-Host "`t`tAdding drivers... " -ForegroundColor White -NoNewLine
-        $list_drivers = Get-ChildItem -Directory -Path ".\winpe\drivers\*\" 2>&1> $null
+        $list_drivers = Get-ChildItem -Directory -Path ".\winpe\drivers\*\" -ErrorAction SilentlyContinue
 		if ($list_drivers.Count -gt 0) {
 			Write-Host
 			foreach ($driver in $list_drivers) {
@@ -466,39 +468,59 @@ function PrepareWinPEWIM($iso, $outputfolder) {
 
 # MAIN starts here!
 
+function InstallChoco() {
+    try {
+        Get-Command "choco" | Out-Null
+    } catch {
+        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+    }
+}
+
+function InstallWAIK() {
+    InstallChoco
+    choco install windows-adk-winpe -y --installargs="/installPath `"$pwd\.tmp\wadk-winpe\`""
+
+    if ($? -ne 0) {
+        Write-Host "Successfully installed WAIK-WINPE" -ForegroundColor Green
+        $wim_boot_files = Get-ChildItem -Path ".\.tmp\wadk-winpe\*\winpe.wim" -Recurse -ErrorAction SilentlyContinue
+        foreach($wim_boot_file in $wim_boot_files){
+            $architecture = $wim_boot_file.Directory.Parent.Name
+            Write-Host $wim_boot_file $architecture
+            New-Item -Force -ItemType directory -Path ".\winpe\images\$architecture\" | Out-Null
+            Move-Item "$wim_boot_file" ".\winpe\images\$architecture\boot.wim"
+        }
+    } else {
+        Write-Host "Failed installing WAIK-WINPE. Install it manually and copy the winpe.wim file to .\winpe." -ForegroundColor Red
+        Exit -1
+    }
+}
+
+
 function DetectAndInstallWAIK() {
-	$DedicatedWimFiles = Get-ChildItem -Recurse ".\winpe\images\*\boot.wim" 2>&1> $null
+	$DedicatedWimFiles = Get-ChildItem -Recurse ".\winpe\images\*\boot.wim" -ErrorAction SilentlyContinue
 
 	if ( ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) -gt 0 ) {
 		Write-Host "Found" ($DedicatedWimFiles | Measure-Object | ForEach-Object{$_.Count}) "dedicated winpe.wim file(s)!" -ForegroundColor White
 	} else {
-		$install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
+        $images = GetLatestWinPEImages
 
-		if ($install_WAIK_winpe -eq 'n') {
-			Write-Host "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!" -ForegroundColor White
-		} else {
-			try {
-				Get-Command "choco" | Out-Null
-			} catch {
-				Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-			}
+        if ($images.Count -gt 0) {
+            Write-Host "We found one or more installations of WAIK; we'll copy the latest WinPE files from there, this will take a few moments..." -ForegroundColor White
 
-			choco install windows-adk-winpe -y --installargs="/installPath `"$pwd\.tmp\wadk-winpe\`""
+            $images | % {
+                $architecture = ConvertArchitectureIdToString($_.Latest.Architecture)
+                New-Item -Force -ItemType directory -Path ".\winpe\images\$architecture\" | Out-Null
+                Copy-Item "$($_.Latest.Path)" ".\winpe\images\$architecture\boot.wim"
+            }
+        } else {
+            $install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
 
-			if ($? -ne 0) {
-				Write-Host "Successfully installed WAIK-WINPE" -ForegroundColor Green
-				$wim_boot_files = Get-ChildItem -Path ".\.tmp\wadk-winpe\*\winpe.wim" -Recurse 2>&1> $null
-				foreach($wim_boot_file in $wim_boot_files){
-					$architecture = $wim_boot_file.Directory.Parent.Name
-					Write-Host $wim_boot_file $architecture
-					New-Item -Force -ItemType directory -Path ".\winpe\images\$architecture\" | Out-Null
-					Move-Item "$wim_boot_file" ".\winpe\images\$architecture\boot.wim"
-				}
-			} else {
-				Write-Host "Failed installing WAIK-WINPE. Install it manually and copy the winpe.wim file to .\winpe." -ForegroundColor Red
-				Exit -1
-			}
-		}
+            if ($install_WAIK_winpe -eq 'n') {
+                Write-Host "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!" -ForegroundColor White
+            } else {
+                InstallWAIK
+            }
+        }
 	}
 }
 
