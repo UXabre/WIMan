@@ -1,5 +1,6 @@
 param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\", [int]$Optimization = 1)
 Set-ExecutionPolicy Bypass -Scope Process -Force
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Includes
 . ".\inc\ExtractXMLFromWIM.ps1"
@@ -467,10 +468,9 @@ function PrepareWinPEWIM($iso, $outputfolder) {
 }
 
 # MAIN starts here!
-
 function InstallChoco() {
     try {
-        Get-Command "choco" | Out-Null
+        Get-Command "choco" -ErrorAction Stop | Out-Null
     } catch {
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
     }
@@ -535,25 +535,37 @@ function DetectWindowsName($iso) {
     Write-Host "$windowsBase" -ForegroundColor Yellow
 }
 
-DetectAndInstallWAIK
+$isAdmin = ([Security.Principal.WindowsPrincipal] `
+  [Security.Principal.WindowsIdentity]::GetCurrent() `
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-$folder = New-Item -Force -ItemType directory -Path $tempfolder
-$folder.Attributes += 'HIDDEN'
+if ($isAdmin -eq $true) {
+    DetectAndInstallWAIK
 
-$list_isos = Get-ChildItem -Path "$sourcesfolder\*\*\*.iso"
+    $folder = New-Item -Force -ItemType directory -Path $tempfolder
+    $folder.Attributes += 'HIDDEN'
 
-foreach($iso in $list_isos){
-    Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
-    ExtractISO $iso $tempfolder $overwrite
+    $list_isos = Get-ChildItem -Path "$sourcesfolder\*\*\*.iso"
 
-    DetectWindowsName $iso
+    foreach($iso in $list_isos){
+        Write-Host "Building media for " $iso.Directory.Name "[" $iso.Directory.Parent.Name "]"
+        ExtractISO $iso $tempfolder $overwrite
 
-    PrepareWinPEWIM $iso $outputfolder
-    PrepareInstallWIM $iso $outputfolder
+        DetectWindowsName $iso
 
-    Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
-    CopyBootFiles $iso $outputfolder
-    Write-Host "OK" -ForegroundColor Green
+        PrepareWinPEWIM $iso $outputfolder
+        PrepareInstallWIM $iso $outputfolder
+
+        Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
+        CopyBootFiles $iso $outputfolder
+        Write-Host "OK" -ForegroundColor Green
+    }
+
+    Write-Host "All Done!"
+} else {
+    Write-Host -ForegroundColor red -BackgroundColor Black "╔════════════════════════════════════════════════════════════╗"
+    Write-Host -ForegroundColor red -BackgroundColor Black "║                Not running as administrator                ║"
+    Write-Host -ForegroundColor red -BackgroundColor Black "╟────────────────────────────────────────────────────────────╢"
+    Write-Host -ForegroundColor red -BackgroundColor Black "║ please run this script in an elevated powershell instance! ║"
+    Write-Host -ForegroundColor red -BackgroundColor Black "╚════════════════════════════════════════════════════════════╝"
 }
-
-Write-Host "All Done!"
