@@ -5,6 +5,7 @@
  - Added "Elevated Console" detection (as the program is best ran as admin)
  - Configured TLS support for webclients
  - Incorrectly detected "choco"
+ - Added logging output
 
 ## [0.0.2] - 2020-02-04
 ### Added

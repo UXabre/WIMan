@@ -5,3 +5,5 @@ finalized/
 sources/
 drivers/
 winpe/images
+**/*.wim
+*.log
