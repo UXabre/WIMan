@@ -18,17 +18,17 @@ function PrepareInstallWIM($iso, $outputfolder) {
     New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
     Remove-Item -Force -Path "$destinationfolder\images.ini" -ErrorAction SilentlyContinue
 
-    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude ($destinationfolder + "\boot.wim") -ErrorAction SilentlyContinue
+    $oldImages = Get-ChildItem -Path ($destinationfolder + "\*.wim") -Exclude "boot.wim" -ErrorAction SilentlyContinue
     foreach ($oldImage in $oldImages) {
-		Log "INFO" "Deleting older $($oldImage.FileName)..."
-        Write-Host "`t`tDeleting older "($oldImage.FileName)"... " -NoNewline -ForegroundColor White
+		Log "INFO" "Deleting older $($oldImage.Name)..."
+        Write-Host "`t`tDeleting older $($oldImage.Name)... " -NoNewline -ForegroundColor White
         Remove-Item $oldImage -Force | Out-Null
 
         if ($? -ne 0) {
-			Log "INFO" "Successfully deleted older $($oldImage.FileName)"
+			Log "INFO" "Successfully deleted older $($oldImage.Name)"
             Write-Host "OK" -ForegroundColor Green
         } else {
-			Log "ERROR" "Failed to delete older $($oldImage.FileName)"
+			Log "ERROR" "Failed to delete older $($oldImage.Name)"
             Write-Host "Failed" -ForegroundColor Red
         }
     }
