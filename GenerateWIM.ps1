@@ -1,4 +1,4 @@
-﻿param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\", [int]$Optimization = 1)
+param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\", [int]$Optimization = 1)
 Set-ExecutionPolicy Bypass -Scope Process -Force
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -24,6 +24,24 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 . ".\inc\PrepareWIM.ps1"
 . ".\inc\PrepareWinPEWIM.ps1"
 . ".\inc\SetWinPETargetPath.ps1"
+. ".\inc\FetchLatestOpenSSH.ps1"
+
+Write-Host "             ▒       ▒                                                                                                  
+          ▒▒▒▒▒▒▒▒▓▓▓▒▒▒▒▒▒                                                                                             
+        ▒▓▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▓▓▒                                                                                          
+       ▓▒▒▒▒▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒         ▒▒▒    ▒▒▒▒▒    ▒▒▒  ▒▒▒    ▒▒▒▒     ▒▒▒▒▒                                      
+      ▓▓▒▒▓▒▒▒▒▓▒▒▒▒▒▒▒▒▒▓▒▒▒▒▒▒        ▒▒▒    ▒▒▒▒▒   ▒▒▒▒  ▒▒▒    ▒▒▒▒▒    ▒▒▒▒▒                                      
+     ▒▓▒▒▓▒▒▒▒▒▒▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓         ▒▒▒   ▒▒▒▒▒   ▒▒▒   ▒▒▒    ▒▒▒▒▒   ▒▒▒▒▒▒    ▒▓▓▓▓▓▒    ▒▓▓ ▒▓▓▓▒              
+     █▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓         ▒▒▒  ▒▒▒ ▒▒▒  ▒▒▒   ▒▒▒    ▒▒▒▒▒▒  ▒▒▒▒▒▒   ▓███▓████   ▓████▓████             
+    ▒█▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒        ▒▒▒▒ ▒▒▒ ▒▒▒ ▒▒▒    ▒▒▒    ▒▒ ▒▒▒ ▒▒▒ ▒▒▒   ▒▒▒   ███   ▓██▓   ███             
+    ▒▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓         ▒▒▒▒▒▒   ▒▒▒▒▒▒    ▒▒▒    ▒▒  ▒▒▒▒▒▒ ▒▒▒    ▓▓██████   ▓██▒   ███             
+    ▓▓▓█▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓██▓        ▒▒▒▒▒▒   ▒▒▒▒▒▒    ▒▒▒    ▒▒  ▒▒▒▒▒  ▒▒▒  ▒███▒  ███   ▓██▒   ███             
+   ▒▓▒██▒▓█▓▓▓▓▓▒▒▒▒▒▒▒▒▒▓▓▓▓█▓▓▒▒▒▒       ▒▒▒▒     ▒▒▒▒     ▒▒▒    ▒▒   ▒▒▒▒  ▒▒▒  ▒███  ▓███   ▓██▒   ███             
+    ▒▓▓▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒▒▒▒▓▒       ▒▒▒▒     ▒▒▒▒     ▒▒▒    ▒▒   ▒▒▒   ▒▒▒   ▓█████▓██▒  ▓██▒   ███             
+       ▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▒                                                                                       
+          ▒▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▒▒                                                                                          
+                ▒▒▒▒▒▒▒▒                                                                                                
+"                                                      
 
 # MAIN starts here!
 $isAdmin = ([Security.Principal.WindowsPrincipal] `
@@ -32,6 +50,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] `
 
 if ($isAdmin -eq $true) {
     DetectAndInstallWAIK
+    DownloadLatestOpenSSHServer
 
     $folder = New-Item -Force -ItemType directory -Path $tempfolder
     $folder.Attributes += 'HIDDEN'

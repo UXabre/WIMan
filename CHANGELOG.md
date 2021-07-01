@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.4] - 2021-07-01
+### Added
+ - Automatically fetch the latest OpenSSH server package and add it to tools
+   This can later be used in a script to install and configure OpenSSH capabilities on any windows target 
+
 ## [0.0.3] - 2020-03-02
 ### Fixed
  - Added "Elevated Console" detection (as the program is best ran as admin)
