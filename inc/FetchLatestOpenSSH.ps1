@@ -10,8 +10,9 @@
     $request = Invoke-WebRequest -Uri https://github.com/PowerShell/Win32-OpenSSH/releases.atom -UseBasicParsing
     [xml]$content = $request.content
     $versions = $content.feed.entry | Sort-Object -Property title -Descending
-    $latest = $versions[0].title
+    $latest = $versions[0].id.Split("/")[-1]
 
+    New-Item -Path '.tmp/openssh/' -ItemType Directory
     Log "INFO" "Downloading x64 package for version $latest"
     Invoke-WebRequest -Uri https://github.com/PowerShell/Win32-OpenSSH/releases/download/$latest/OpenSSH-Win64.zip -OutFile .tmp/openssh/OpenSSH-Win64.zip
     Log "INFO" "Downloading x86 package for version $latest"
