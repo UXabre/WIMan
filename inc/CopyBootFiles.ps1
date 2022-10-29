@@ -7,31 +7,13 @@ function CopyBootFiles($iso, $outputfolder) {
     Log "DEBUG" "Sourcefolder: $sourcefolder"
     $destinationfolder = $outputfolder + $sourcefolder
     Log "DEBUG" "Destinationfolder: $destinationfolder"
-    $wimBootLatest = 'http://git.ipxe.org/releases/wimboot/wimboot-latest.zip'
+    $wimBootLatest = "https://github.com/ipxe/wimboot/releases/latest/download/wimboot"
 
-    Invoke-WebRequest -Uri $wimBootLatest -OutFile "$tempfolder\wimboot-latest.zip"
+    Invoke-WebRequest -Uri $wimBootLatest -OutFile "$destinationfolder\wimboot"
     if ($? -eq $true) {
-        Log "INFO" "Successfully downloaded $wimBootLatest to $tempfolder"
+        Log "INFO" "Successfully downloaded $wimBootLatest"
     } else {
-        Log "ERROR" "Failed to download $wimBootLatest to $tempfolder"
-    }
-    Expand-Archive -Path "$tempfolder\wimboot-latest.zip"  -DestinationPath "$tempfolder\wimboot-latest" -Force
-    if ($? -eq $true) {
-        Log "INFO" "Successfully expanded $tempfolder\wimboot-latest.zip to $tempfolder\wimboot-latest"
-    } else {
-        Log "ERROR" "Failed to expand $tempfolder\wimboot-latest.zip to $tempfolder\wimboot-latest"
-    }
-    Get-ChildItem -Path "$tempfolder\wimboot-latest\*\wimboot" | Copy-Item -Destination "$destinationfolder\wimboot"
-    if ($? -eq $true) {
-        Log "INFO" "Successfully copied wimboot to $destinationfolder"
-    } else {
-        Log "ERROR" "Failed to copy wimboot to $destinationfolder"
-    }
-    Remove-Item "$tempfolder\wimboot-latest*" -Recurse -Force
-    if ($? -eq $true) {
-        Log "INFO" "Successfully cleaned $tempfolder\wimboot-latest"
-    } else {
-        Log "ERROR" "Failed to clean $tempfolder\wimboot-latest"
+        Log "ERROR" "Failed to download $wimBootLatest"
     }
 
     $boot_files = @(
