@@ -11,8 +11,9 @@ function PrepareInstallWIM($iso, $outputfolder) {
 	Log "DEBUG" "Original WIM: $installwim"
 
     $metaData = ExtractXMLFromWIM $installwim
-	$amountOfImages = $metaData.WIM.IMAGE.Length
-	Log "INFO" "Found $amountOfImages images!"
+    [array]$wimImages = $metaData.WIM.IMAGE
+    $amountOfImages = $wimImages.Length
+    Log "INFO" "Found $amountOfImages images!"
     Write-Host "`tFound " $amountOfImages "images!"
 
     New-Item -Force -ItemType directory -Path $destinationfolder | Out-Null
@@ -34,13 +35,13 @@ function PrepareInstallWIM($iso, $outputfolder) {
     }
 
     For ($imageIndex=1; $imageIndex -le $amountOfImages; $imageIndex++) {
-        $imageName = $metaData.WIM.IMAGE[$imageIndex-1].NAME
+        $imageName = $wimImages[$imageIndex-1].NAME
         $fileName = $imageName
 
         if ($Optimization -eq 1) {
-            $fileName = $metaData.WIM.IMAGE[$imageIndex-1].WINDOWS.INSTALLATIONTYPE + ".wim"
+            $fileName = $wimImages[$imageIndex-1].WINDOWS.INSTALLATIONTYPE + ".wim"
         } elseif ($Optimization -eq 2) {
-            $fileName = $metaData.WIM.IMAGE[$imageIndex-1].WINDOWS.EDITIONID + ".wim"
+            $fileName = $wimImages[$imageIndex-1].WINDOWS.EDITIONID + ".wim"
         } elseif ($Optimization -eq 3) {
             $fileName = "install.wim"
         }
