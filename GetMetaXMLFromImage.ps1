@@ -11,7 +11,7 @@ if ($image.EndsWith(".iso") -eq $true) {
     $wimFile = $volume.DriveLetter + ":\sources\install.wim"
 }
 
-(ExtractXMLFromWIM $wimFile).WIM.IMAGE
+(ExtractXMLFromWIM $wimFile).WIM.IMAGE.DESCRIPTION
 
 if ($image.EndsWith(".iso") -eq $true) {
     Dismount-DiskImage -ImagePath $image | Out-Null

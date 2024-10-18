@@ -26,6 +26,9 @@ Simply Clone this repository to your local machine and [prepare your Foreman Ins
  - Configure your Foreman Installation Media to point to this folder. As you can see from the folder structure, we included the architecture in the path!
  - Use the latest community templates; this contains a rule which interprets a manifest ini that configures downloading of the correct source. This proves to be faster in download times + faster install time (compared to downloading the entire WIM as-is)
 
+# Language packs
+You can customize your ISO further by adding language packs, for windows 11 these can be found here: https://software-static.download.prss.microsoft.com/dbazure/988969d5-f34g-4e03-ac9d-1f9786c66749/22621.1.220506-1250.ni_release_amd64fre_CLIENT_LOF_PACKAGES_OEM.iso
+
 # Result
 ![Result PXE](/doc/pxe.png?raw=true "PXE")
 Early measurements showed that deploying a windows server core 2016 takes around 6 minutes from boot to final boot!

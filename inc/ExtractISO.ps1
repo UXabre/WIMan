@@ -1,6 +1,7 @@
 function ExtractISO($iso, $outputfolder, $overwrite) {
     Log "INFO" "Extracting ISO: $iso..."
     $architecture = ([System.IO.FileInfo]$iso).Directory.Parent.Name
+    $basefolder = "$pwd\sources\" + $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
     Log "DEBUG" "Arch: $architecture"
     $outputfolder += $architecture + "\" + ([System.IO.FileInfo]$iso).Directory.Name
     Log "DEBUG" "Outputfolder: $outputfolder"
@@ -19,27 +20,33 @@ function ExtractISO($iso, $outputfolder, $overwrite) {
         $source = $volume.DriveLetter + ":\"
         New-Item -Force -ItemType directory -Path $outputfolder | Out-Null
 
-        $important_files = @(
-            'sources\install.wim',
-            'boot\boot.sdi',
-            'boot\bcd',
-            'bootmgr',
-            'bootmgr.efi'
-        )
+        # $important_files = @(
+        #     'boot\boot.sdi',
+        #     'boot\bcd',
+        #     'bootmgr',
+        #     'bootmgr.efi'
+        # )
 
-        if (Test-Path $dedicated_winpe -PathType Leaf) {
-            $destination_file = $outputfolder + '\sources\boot.wim'
-            CopyIfNewer $dedicated_winpe $destination_file
-        } else {
-            $important_files += 'sources\boot.wim'
-        }
+        # Log "INFO" "Checking for sysprepped images in $basefolder\images..."
+        # if (!(Test-Path "$basefolder\images")) {
+        #     Log "INFO" "Images directory not found, including default install.wim"
+        #     $important_files += 'sources\install.wim'
+        # }
 
-        foreach ($important_file in $important_files) {
-            $source_file = $source + '\' + $important_file
-            $destination_file = $outputfolder + '\' + $important_file
+        # if (Test-Path $dedicated_winpe -PathType Leaf) {
+        #     $destination_file = $outputfolder + '\sources\boot.wim'
+        #     CopyIfNewer $dedicated_winpe $destination_file
+        # } else {
+        #     $important_files += 'sources\boot.wim'
+        # }
 
-            CopyIfNewer $source_file $destination_file
-        }
+        # foreach ($important_file in $important_files) {
+        #     $source_file = $source + '\' + $important_file
+        #     $destination_file = $outputfolder + '\' + $important_file
+
+        #     CopyIfNewer $source_file $destination_file
+        # }
+        robocopy /xc /xn $source $outputfolder
 
         Dismount-DiskImage -ImagePath $mount.ImagePath | Out-Null
         Log "INFO" "Copy complete"

@@ -11,7 +11,8 @@ function CopyIfNewer($source_file, $destination_file) {
             )
         ) {
         Log "INFO" "Overwriting $destination_file ..."
-	    Copy-Item $source_file -Destination $destination_file | Out-Null
+        
+	    Copy-Item $source_file -Destination $destination_file
     }
 
     Log "INFO" "Ended Copy-If-Newer"

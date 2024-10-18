@@ -7,3 +7,5 @@ drivers/
 winpe/images
 **/*.wim
 *.log
+iso/
+overlays/install/Windows/Provisioning/Autopilot/AutopilotConfigurationFile.json

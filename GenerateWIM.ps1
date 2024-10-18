@@ -1,4 +1,4 @@
-param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\", [int]$Optimization = 1)
+param([string]$sourcesfolder = "$pwd\sources\", [string]$outputfolder = "$pwd\finalized\", [string]$tempfolder = "$pwd\.tmp\", [int]$Optimization = 3)
 Set-ExecutionPolicy Bypass -Scope Process -Force
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -10,6 +10,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 . ".\inc\ConvertArchitectureIdToString.ps1"
 . ".\inc\CopyBootFiles.ps1"
 . ".\inc\CopyIfNewer.ps1"
+. ".\inc\CopyProtectedFiles.ps1"
 . ".\inc\DetectWindowsName.ps1"
 . ".\inc\ExportWIMIndex.ps1"
 . ".\inc\ExtractISO.ps1"
@@ -23,16 +24,16 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 . ".\inc\PrepareInstallWIM.ps1"
 . ".\inc\PrepareWIM.ps1"
 . ".\inc\PrepareWinPEWIM.ps1"
+. ".\inc\GenerateLanguagesIni.ps1"
 . ".\inc\SetWinPETargetPath.ps1"
-. ".\inc\FetchLatestOpenSSH.ps1"
+# . ".\inc\FetchLatestOpenSSH.ps1"
                                             
 
 # MAIN starts here!
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-Write-Host $isAdmin
 if ($isAdmin -eq $true) {
     DetectAndInstallWAIK
-    DownloadLatestOpenSSHServer
+    # DownloadLatestOpenSSHServer
 
     $folder = New-Item -Force -ItemType directory -Path $tempfolder
     $folder.Attributes += "HIDDEN"
@@ -46,11 +47,11 @@ if ($isAdmin -eq $true) {
         DetectWindowsName $iso
 
         PrepareWinPEWIM $iso $outputfolder
-        PrepareInstallWIM $iso $outputfolder
+        PrepareInstallWIM $iso $outputfolder $Optimization
 
-        Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
-        CopyBootFiles $iso $outputfolder
-        Write-Host "OK" -ForegroundColor Green
+        # Write-Host "`tCopying boot files... " -NoNewline -ForegroundColor White
+        # CopyBootFiles $iso $outputfolder
+        # Write-Host "OK" -ForegroundColor Green
     }
 
     Write-Host "All Done!"
