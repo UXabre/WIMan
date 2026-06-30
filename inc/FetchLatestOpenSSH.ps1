@@ -12,7 +12,7 @@
     $versions = $content.feed.entry | Sort-Object -Property title -Descending
     $latest = $versions[0].id.Split("/")[-1]
 
-    New-Item -Path '.tmp/openssh/' -ItemType Directory
+    New-Item -Path '.tmp/openssh/' -ItemType Directory -Force | Out-Null
     Log "INFO" "Downloading x64 package for version $latest"
     Invoke-WebRequest -Uri https://github.com/PowerShell/Win32-OpenSSH/releases/download/$latest/OpenSSH-Win64.zip -OutFile .tmp/openssh/OpenSSH-Win64.zip
     Log "INFO" "Downloading x86 package for version $latest"
