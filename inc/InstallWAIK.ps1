@@ -56,14 +56,20 @@ function DetectAndInstallWAIK() {
                 }
             }
         } else {
-            Log "INFO" "No dedicated winpe.wim file found  we can fetch this automatically for you but this takes a few minutes. Do you want to continue? (Y/N)"
-            $install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
-            Log "INFO" "User answered: $install_WAIK_winpe"
+            if ([Environment]::UserInteractive) {
+                Log "INFO" "No dedicated winpe.wim file found  we can fetch this automatically for you but this takes a few minutes. Do you want to continue? (Y/N)"
+                $install_WAIK_winpe = Read-Host "No dedicated winpe.wim file found, we can fetch this automatically for you but this takes a few minutes. `nDo you want to continue? (Y/N)"
+                Log "INFO" "User answered: $install_WAIK_winpe"
 
-            if ($install_WAIK_winpe -eq 'n') {
-                Log "INFO" "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!"
-                Write-Host "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!" -ForegroundColor White
+                if ($install_WAIK_winpe -eq 'n') {
+                    Log "INFO" "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!"
+                    Write-Host "Will use the embedded winpe file from windows installation media. This is a slightly larger file with additional features that you might not need or want. This is only a convenience rather than a solution!" -ForegroundColor White
+                } else {
+                    InstallWAIK
+                }
             } else {
+                Log "INFO" "Non-interactive session detected: installing WAIK automatically without prompting."
+                Write-Host "Non-interactive session: installing WAIK automatically..." -ForegroundColor White
                 InstallWAIK
             }
         }
