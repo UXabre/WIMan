@@ -149,7 +149,7 @@ function PrepareInstallWIM($iso, $outputfolder) {
 						Write-Host $embedded_updateInfo.Name -ForegroundColor Cyan -NoNewLine
 						Write-Host "... " -ForegroundColor White -NoNewLine
 
-						if ($embedded_updateInfo.State == "NotInstalled") {
+						if ($embedded_updateInfo.State -eq "NotInstalled") {
 							if (AddUpdatesToWIM $installwim $updatefile) {
 								Log "INFO" "Successfully installed update $($embedded_updateInfo.Name)..."
 								Write-Host "OK" -ForegroundColor Green

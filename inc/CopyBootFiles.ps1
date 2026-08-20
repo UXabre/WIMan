@@ -7,14 +7,34 @@ function CopyBootFiles($iso, $outputfolder) {
     Log "DEBUG" "Sourcefolder: $sourcefolder"
     $destinationfolder = $outputfolder + $sourcefolder
     Log "DEBUG" "Destinationfolder: $destinationfolder"
-    $wimBootLatest = "https://github.com/ipxe/wimboot/releases/latest/download/wimboot"
+    $WimbootVersion = "v2.9.0"
+    $WimbootHash = "5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3"
+    $WimbootUrl = "https://github.com/ipxe/wimboot/releases/download/$WimbootVersion/wimboot"
+    $WimbootCache = ".tmp\wimboot\$WimbootVersion\wimboot"
 
-    Invoke-WebRequest -Uri $wimBootLatest -OutFile "$destinationfolder\wimboot"
-    if ($? -eq $true) {
-        Log "INFO" "Successfully downloaded $wimBootLatest"
+    if (Test-Path $WimbootCache -PathType Leaf) {
+        Log "INFO" "Wimboot $WimbootVersion found in cache, skipping download"
     } else {
-        Log "ERROR" "Failed to download $wimBootLatest"
+        Log "INFO" "Downloading wimboot $WimbootVersion from $WimbootUrl"
+        New-Item -Force -ItemType directory -Path ([System.IO.FileInfo]$WimbootCache).Directory.FullName | Out-Null
+        Invoke-WebRequest -Uri $WimbootUrl -OutFile $WimbootCache
+        if ($? -ne $true) {
+            Log "ERROR" "Failed to download wimboot from $WimbootUrl"
+            return
+        }
     }
+
+    $actualHash = (Get-FileHash -Path $WimbootCache -Algorithm SHA256).Hash
+    if ($actualHash -ne $WimbootHash) {
+        Log "ERROR" "Wimboot SHA256 mismatch: expected $WimbootHash, got $actualHash"
+        Remove-Item $WimbootCache -Force
+        return
+    }
+
+    $destFile = "$destinationfolder\wimboot"
+    New-Item -Force -ItemType directory -Path ([System.IO.FileInfo]$destFile).Directory.FullName | Out-Null
+    Copy-Item $WimbootCache -Destination $destFile -Force
+    Log "INFO" "Wimboot $WimbootVersion deployed to $destFile (SHA256 verified)"
 
     $boot_files = @(
         'boot\boot.sdi',
